@@ -1,3 +1,86 @@
+<?php
+// --- PHP-LOGIK FÖR FORMULÄRHANTERING ---
+
+// Kontrollera om förfrågan är en POST-förfrågan (dvs. från vårt JS-formulär)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    
+    // Sätt headers för att indikera att vi svarar med JSON och använder UTF-8
+    header('Content-Type: application/json; charset=utf-8');
+
+    // Läs den inkommande JSON-datan från fetch-anropet
+    $json_data = file_get_contents('php://input');
+    $data = json_decode($json_data, true);
+
+    // Validering på serversidan (Viktigt! Lita aldrig enbart på klient-validering)
+    if (
+        !isset($data['name']) || empty(trim($data['name'])) ||
+        !isset($data['email']) || !filter_var($data['email'], FILTER_VALIDATE_EMAIL) ||
+        !isset($data['phone']) || empty(trim($data['phone'])) ||
+        !isset($data['company']) || empty(trim($data['company'])) ||
+        !isset($data['digitalScore']) || !isset($data['scoreTitle'])
+    ) {
+        // Skicka ett felmeddelande om data saknas eller är felaktig
+        http_response_code(400); // Bad Request
+        echo json_encode(['success' => false, 'message' => 'Vänligen fyll i alla obligatoriska fält korrekt.']);
+        exit(); // Avsluta skriptet
+    }
+
+    // Sanera indata för säkerhets skull
+    $name = htmlspecialchars(trim($data['name']));
+    $email = htmlspecialchars(trim($data['email']));
+    $phone = htmlspecialchars(trim($data['phone']));
+    $company = htmlspecialchars(trim($data['company']));
+    $digitalScore = htmlspecialchars($data['digitalScore']);
+    $scoreTitle = htmlspecialchars($data['scoreTitle']);
+    
+    // NYTT: Hantera det valfria meddelandefältet
+    $userMessage = 'Inget meddelande lämnades.';
+    if (isset($data['message']) && !empty(trim($data['message']))) {
+        $userMessage = htmlspecialchars(trim($data['message']));
+    }
+    
+    // --- SKAPA OCH SKICKA E-POSTMEDDELANDET ---
+    
+    $to = 'davidhenricson.swe@gmail.com';
+    $subject = 'Nytt Lead från Digitaliserings-Score: ' . $company;
+
+    // Skapa en snygg och strukturerad meddelandekropp
+    $messageBody = "Ett nytt lead har genererats via Digitaliserings-Score-testet.\n\n";
+    $messageBody .= "============================================\n";
+    $messageBody .= "KUNDUPPGIFTER\n";
+    $messageBody .= "============================================\n";
+    $messageBody .= "Företag: " . $company . "\n";
+    $messageBody .= "Kontaktperson: " . $name . "\n";
+    $messageBody .= "E-post: " . $email . "\n";
+    $messageBody .= "Telefon: " . $phone . "\n\n";
+    $messageBody .= "--------------------------------------------\n";
+    $messageBody .= "MEDDELANDE FRÅN ANVÄNDAREN\n";
+    $messageBody .= "--------------------------------------------\n";
+    $messageBody .= $userMessage . "\n\n"; // Inkludera meddelandet här
+    $messageBody .= "============================================\n";
+    $messageBody .= "QUIZ-RESULTAT\n";
+    $messageBody .= "============================================\n";
+    $messageBody .= "Digitaliserings-Score (1-15): " . $digitalScore . "\n";
+    $messageBody .= "Resultat-titel: " . $scoreTitle . "\n\n";
+    $messageBody .= "Vänligen följ upp detta lead omgående.\n";
+
+    // Headers är viktiga för att mejlet ska komma fram och se korrekt ut
+    $headers = 'From: AvistaTime Quiz <noreply@dindoman.com>' . "\r\n" .
+               'Reply-To: ' . $email . "\r\n" .
+               'Content-Type: text/plain; charset=UTF-8' . "\r\n" .
+               'X-Mailer: PHP/' . phpversion();
+
+    // Skicka meddelandet
+    if (mail($to, $subject, $messageBody, $headers)) {
+        echo json_encode(['success' => true, 'message' => 'Meddelandet har skickats!']);
+    } else {
+        http_response_code(500); // Internal Server Error
+        echo json_encode(['success' => false, 'message' => 'Serverfel. Meddelandet kunde inte skickas.']);
+    }
+
+    exit(); // Avsluta skriptet här så att HTML-koden nedan inte renderas
+}
+?>
 <!DOCTYPE html>
 <html lang="sv">
 <head>
@@ -76,7 +159,6 @@
             color: var(--primary-color);
         }
         
-        /* För tillgänglighet - gör att vi kan fokusera på rubriker via JS */
         [tabindex="-1"]:focus {
             outline: none;
         }
@@ -112,7 +194,6 @@
             cursor: pointer;
             text-decoration: none;
             transition: transform 0.2s ease, background-color 0.2s ease;
-            margin-top: 20px; /* Tillagt för att ge lite luft uppåt */
         }
 
         .btn:hover:not(:disabled) {
@@ -161,7 +242,7 @@
             font-size: 1.5rem;
             font-weight: 600;
             margin-bottom: 30px;
-            min-height: 90px; /* Undvik att sidan "hoppar" i höjdled */
+            min-height: 90px;
         }
 
         .answer-options {
@@ -181,7 +262,6 @@
             cursor: pointer;
             transition: all 0.2s ease;
             color: var(--dark-text);
-            margin-top: 0; /* Nollställ marginal för svarsknappar */
         }
 
         .answer-btn:hover:not(:disabled) {
@@ -232,7 +312,60 @@
             margin-left: auto;
             margin-right: auto;
         }
+
+        /* --- FORMULÄR --- */
+        .form-container {
+            background-color: #f9f9f9;
+            padding: 30px;
+            border-radius: var(--border-radius);
+            border: 1px solid #eee;
+            margin-top: 20px;
+        }
         
+        .form-container h3 {
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+        
+        .form-group input,
+        .form-group textarea { /* NYTT: Inkluderar textarea här */
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: 'Poppins', sans-serif;
+            resize: vertical; /* Tillåter vertikal omskalning */
+        }
+        
+        .form-group input:focus,
+        .form-group textarea:focus { /* NYTT: Inkluderar textarea här */
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(0, 82, 155, 0.2);
+        }
+        
+        #form-error {
+            color: var(--error-color);
+            background-color: rgba(231, 76, 60, 0.1);
+            border: 1px solid var(--error-color);
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none;
+        }
+
         /* --- "VARFÖR AVISTATIME"-SEKTION --- */
         #why-avista-section {
             padding: 50px 40px;
@@ -313,7 +446,6 @@
         <!-- ==================== HJÄLTESEKTION ==================== -->
         <section id="hero-section" class="section active">
             <img src="https://static.wixstatic.com/media/2432be_fa180bd7fcb14e63afeec97d095b36d4~mv2.png" alt="AvistaTime" class="logo">
-            
             <h1 id="hero-title" class="section-title" tabindex="-1">Hur digital är din städ- och serviceverksamhet?</h1>
             <p>Svara på 5 snabba frågor och få ert personliga Digitaliserings-Score direkt. Upptäck var ni kan spara tid, öka lönsamheten och få nöjdare kunder.</p>
             <button id="start-quiz-btn" class="btn btn-accent">Starta testet nu! (Gratis)</button>
@@ -331,7 +463,7 @@
             </div>
         </section>
         
-        <!-- ==================== RESULTATSEKTION ==================== -->
+        <!-- ==================== RESULTATSEKTION MED FORMULÄR ==================== -->
         <section id="result-section" class="section">
             <h2 id="result-title" class="section-title" tabindex="-1">Ert Digitaliserings-Score är:</h2>
             <div class="score-container">
@@ -340,15 +472,38 @@
             <p id="score-text"></p>
             <p id="score-explanation"></p>
             
-            <!-- ÄNDRING GJORD HÄR: Formuläret är ersatt med en CTA-knapp -->
-            <p style="margin-top: 30px;">Redo att ta nästa steg? Klicka på knappen nedan för att boka en kostnadsfri och anpassad demo där vi visar exakt hur AvistaTime kan lösa era utmaningar.</p>
-            <a href="DIN_TALLY_LÄNK_HÄR" target="_blank" rel="noopener noreferrer" class="btn btn-accent" style="font-size: 1.2rem; padding: 18px 35px;">
-                Bli kontaktad
-            </a>
-            
+            <div class="form-container">
+                <h3>Ta nästa steg mot full kontroll!</h3>
+                <p style="margin-bottom: 20px;">Fyll i dina uppgifter så bokar vi en <strong>kostnadsfri och anpassad demo</strong> där vi visar exakt hur AvistaTime kan lösa era utmaningar.</p>
+                <form id="lead-form" method="POST" novalidate>
+                    <div class="form-group">
+                        <label for="name">Namn</label>
+                        <input type="text" id="name" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="email">E-postadress</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="phone">Telefonnummer</label>
+                        <input type="tel" id="phone" name="phone" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="company">Företag/Organisation</label>
+                        <input type="text" id="company" name="company" required>
+                    </div>
+                    <!-- NYTT: Meddelandefältet har lagts till här -->
+                    <div class="form-group">
+                        <label for="message">Meddelande (valfritt)</label>
+                        <textarea id="message" name="message" rows="4"></textarea>
+                    </div>
+                    <button type="submit" id="submit-btn" class="btn btn-accent" style="width: 100%;">Boka min kostnadsfria demo nu!</button>
+                    <p id="form-error"></p>
+                </form>
+            </div>
         </section>
         
-        <!-- ==================== TACK-SEKTION (KAN TAS BORT MEN BEHÅLLS FÖR FRAMTIDEN) ==================== -->
+        <!-- ==================== TACK-SEKTION ==================== -->
         <section id="thank-you-message" class="section">
              <h2 id="thank-you-title" class="section-title" tabindex="-1">Tack för din förfrågan!</h2>
              <p>Vi har tagit emot dina uppgifter och en av våra experter kommer att kontakta dig inom kort för att boka in er personliga demo. Vi ser fram emot att visa er framtiden inom lokalvård!</p>
@@ -409,8 +564,10 @@
         const scoreDisplay = document.getElementById('score-display');
         const scoreText = document.getElementById('score-text');
         const scoreExplanation = document.getElementById('score-explanation');
-        // ÄNDRING GJORD HÄR: DOM-element för formuläret är borttagna
-        
+        const leadForm = document.getElementById('lead-form');
+        const submitBtn = document.getElementById('submit-btn');
+        const formError = document.getElementById('form-error');
+
         // --- QUIZ-LOGIK ---
         let currentQuestionIndex = 0;
         let userScore = 0;
@@ -428,7 +585,7 @@
                     activeSection.classList.remove('active', 'fading-out');
                     nextSection.classList.add('active');
                     const title = nextSection.querySelector('.section-title');
-                    if (title) title.focus(); // För tillgänglighet
+                    if (title) title.focus();
                     activeSection = nextSection;
                 }, { once: true });
             } else {
@@ -461,9 +618,7 @@
         }
         
         function selectAnswer(points) {
-            // Inaktivera alla knappar för att förhindra dubbelklick
             document.querySelectorAll('.answer-btn').forEach(btn => btn.disabled = true);
-            
             userScore += points;
             currentQuestionIndex++;
             
@@ -473,7 +628,7 @@
                 } else {
                     showResults();
                 }
-            }, 400); // Liten fördröjning för en mjukare övergång
+            }, 400);
         }
         
         function updateProgressBar() {
@@ -514,11 +669,62 @@
             showSection('result-section');
         }
         
-        // ÄNDRING GJORD HÄR: Funktionen handleFormSubmit och dess event listener är borttagen.
+        async function handleFormSubmit(event) {
+            event.preventDefault();
+            
+            if (!leadForm.checkValidity()) {
+                formError.textContent = "Vänligen fyll i alla obligatoriska fält korrekt.";
+                formError.style.display = 'block';
+                return;
+            }
+            
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Skickar...';
+            formError.style.display = 'none';
+
+            const formData = new FormData(leadForm);
+            const leadData = {
+                name: formData.get('name'),
+                email: formData.get('email'),
+                phone: formData.get('phone'),
+                company: formData.get('company'),
+                message: formData.get('message'), // NYTT: Hämtar meddelandet
+                digitalScore: userScore,
+                scoreTitle: scoreText.textContent
+            };
+
+            try {
+                const response = await fetch('index.php', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(leadData),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `Serverfel: ${response.statusText}`);
+                }
+
+                showSection('thank-you-message');
+
+            } catch (error) {
+                console.error('Form submission error:', error);
+                formError.textContent = error.message || "Något gick fel. Kontrollera din anslutning och försök igen.";
+                formError.style.display = 'block';
+            } finally {
+                if (document.getElementById('submit-btn')) { 
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Boka min kostnadsfria demo nu!';
+                }
+            }
+        }
 
         // --- EVENT LISTENERS ---
         startQuizBtn.addEventListener('click', startQuiz);
-        // Event listener för formuläret är borttagen.
+        leadForm.addEventListener('submit', handleFormSubmit);
     })();
     </script>
 
